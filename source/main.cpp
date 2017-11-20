@@ -282,10 +282,12 @@ int argError(char* progName){
 }
 
 void writeData(){
-    jsonData["frames"] = frameData;   
-    std::ofstream file(dataFileName);
-    file << jsonData;
-    file.close();
+    if (dataFileName != "") {
+        jsonData["frames"] = frameData;   
+        std::ofstream file(dataFileName);
+        file << jsonData;
+        file.close();
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -346,16 +348,19 @@ int main(int argc, char* argv[]) {
     }
     
     if (shouldContinue && jsonData.is_object()) {
-        std::cout << "Frames might not be in the correct order" << std::endl;
-        std::vector<std::string> oldFrames;
-        for (auto it = frameData.begin(); it != frameData.end(); ++it){
-            oldFrames.push_back(it.key());
-        }
-        frames.insert(frames.begin(), oldFrames.begin(), oldFrames.end());
-        
-        if (outputFolder == "") {
+
+        if (outputFolder == "") { // use old folder -> continue
             outputFolder = jsonData["output"]["folder"];
             outputCounter = jsonData["output"]["counter"];
+            std::cout << "Only the new frames, beginning from " << outputCounter << "will be rendered." << std::endl;
+        } else { // use new folder -> render all
+            std::cout << "All frames will be rerendered into the new folder, might not be in the correct order." << std::endl;
+            std::vector<std::string> oldFrames;
+            for (auto it = frameData.begin(); it != frameData.end(); ++it){
+                oldFrames.push_back(it.key());
+            }
+            frames.insert(frames.begin(), oldFrames.begin(), oldFrames.end());
+
         }
         eyeHeight = jsonData["positioning"]["height"];
         eyeDistance = jsonData["positioning"]["gap"];
@@ -370,25 +375,27 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    jsonData["output"] = {{"folder", outputFolder}, {"counter", outputCounter}};
-    jsonData["display"] = {{"width", outWidth}, {"height", outHeight}, {"color", {backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a}}};
+    if (jsonData.is_object()) {
+        jsonData["output"] = {{"folder", outputFolder}, {"counter", outputCounter}};
+        jsonData["display"] = {{"width", outWidth}, {"height", outHeight}, {"color", {backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a}}};
+    }
 
-    if (!shouldContinue){
-        std::vector<std::string> framesToDo = getUncompleteFrames(frames);
+    std::vector<std::string> framesToDo = getUncompleteFrames(frames);
 
-        if (framesToDo.size() > 0) {
-            if (fillData(framesToDo)){
-                writeData(); // early write
-                if (getUncompleteFrames(frames).size() != 0) {
-                    std::cout << "Uncomplete dataset." << std::endl;
-                    return 0;
-                }
-            } else {
-                std::cout << "Canceled eye indentification." << std::endl;
+    if (framesToDo.size() > 0) {
+        if (fillData(framesToDo)){
+            writeData(); // early write
+            if (getUncompleteFrames(frames).size() != 0) {
+                std::cout << "Uncomplete dataset." << std::endl;
                 return 0;
             }
+        } else {
+            std::cout << "Canceled eye indentification." << std::endl;
+            return 0;
         }
+    }
 
+    if (!shouldContinue){
         if (demandEyePositioning()) {
             jsonData["positioning"] = {{"gap", eyeDistance},{"height", eyeHeight}};
         } else {
@@ -412,8 +419,10 @@ int main(int argc, char* argv[]) {
     }
     std::cout << std::endl;
 
-    jsonData["output"]["counter"] = outputCounter;
-    writeData();
+    if (jsonData.is_object()) {
+        jsonData["output"]["counter"] = outputCounter;
+        writeData();
+    }
 
     std::cout << "Done, " << frames.size() << " frames processed in " << clock.getElapsedTime().asMilliseconds() << "ms" << std::endl;
 }
