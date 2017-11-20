@@ -1,7 +1,3 @@
-data/
-frames/
-*.sh
 out/
 .vscode/
-result/
 .DS_Store
