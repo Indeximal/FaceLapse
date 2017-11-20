@@ -1,0 +1,6 @@
+data/
+frames/
+*.sh
+out/
+.vscode/
+result/
