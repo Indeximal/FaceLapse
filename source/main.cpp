@@ -28,13 +28,28 @@ namespace b2d {
 
 std::string dataFileName;
 
-json jsonData;
-json frameData;
+json jsonData = R"({
+    "display": {
+        "width": 1920,
+        "height": 1080,
+        "color": [0, 0, 0, 255]
+    },
+    "positioning": {
+        "gap": null,
+        "height": null
+    },
+    "output": {
+        "folder": null,
+        "counter": 0
+    },
+    "frames": {}
+    })"_json;
+json frameData = jsonData["frames"];
 
-int outHeight = 1080;
-int outWidth = 1920;
-float eyeHeight = 0.5;
-float eyeDistance = 0.1;
+int outHeight = 0;
+int outWidth = 0;
+float eyeHeight = 0;
+float eyeDistance = 0;
 sf::Color backgroundColor = sf::Color::Black;
 
 std::string outputFolder;
@@ -44,10 +59,13 @@ std::vector<std::string> frames;
 
 sf::Image transformFrame(std::string name) {
     // sf::Clock clock;
-    sf::Image orig;
-    orig.loadFromFile(name);
     sf::Image ret;
     ret.create(outWidth, outHeight);
+    sf::Image orig;
+    if (!orig.loadFromFile(name)) {
+        std::cerr << name << "couldn't be loaded." << std::endl;
+        return ret;
+    }
     b2d::Vector2 rEye = frameData[name]["RightEyePos"];
     b2d::Vector2 lEye = frameData[name]["LeftEyePos"];
     float dist = (rEye - lEye).getLength();
@@ -275,37 +293,51 @@ bool fillData(std::vector<std::string> frameSet) {
     return save;
 }
 
-int argError(char* progName){
-    std::cerr << "Not all arguments provided!" << std::endl;
-    std::cout << "Use " << progName << " -? for help" << std::endl;
-    return -1;
-}
-
 void writeData(){
     if (dataFileName != "") {
         jsonData["frames"] = frameData;   
         std::ofstream file(dataFileName);
-        file << jsonData;
+        if (file.good()){
+            file << jsonData;
+        }
         file.close();
     }
 }
 
 int main(int argc, char* argv[]) {
-    bool shouldContinue = false;
+    if (argc == 1) {
+        std::cout << "No arguments provided. Use " << argv[0] << " -? for help" << std::endl;
+    }
+
+    bool forceEyeWindow = false;
+    bool forceAllFrames = false;
+    bool continueOutput = false;
+    bool resetCouter = false;
+    bool customColor = false;
+    bool hasData = false;
 
     for (int i = 1; i < argc; i++) {
         if (argv[i][0] == '-'){
             switch (argv[i][1]){
-                case 'c':
-                    shouldContinue = true;
+                case 'e':
+                    forceEyeWindow = true;
+                    resetCouter = true;
+                    break;
+                case 'a':
+                    forceAllFrames = true;
+                    resetCouter = true;
                     break;
                 case 'd': // datafile
                     {
                     ASSERT(argc > i + 1, "-d needs one argument. Usage: -d <datafile>")
                     dataFileName = argv[++i];
                     std::ifstream file(dataFileName);
-                    file >> jsonData;
-                    frameData = jsonData["frames"];
+                    if (file.good()){
+                        file >> jsonData;
+                        frameData = jsonData["frames"];
+                        hasData = true;
+                    }
+                    file.close();
                     break;
                     }
                 case 'o': // outputfolder
@@ -314,12 +346,15 @@ int main(int argc, char* argv[]) {
                     if (outputFolder[outputFolder.length() - 1] != '/') {
                         outputFolder += "/";
                     }
-                    
+                    break;
+                case 'O':
+                    continueOutput = true;
                     break;
                 case 'r': // custom resolution
-                    ASSERT(argc > i + 2, "-r needs two argument. Usage: -r <outputwidth> <outputheigt>")
+                    ASSERT(argc > i + 2, "-r needs two arguments. Usage: -r <outputwidth> <outputheigt>")
                     outWidth = std::stoi(argv[++i]);
                     outHeight = std::stoi(argv[++i]);
+                    resetCouter = true;
                     break;
                 case 'R': { // defalt resolutions
                     ASSERT(argc > i + 1, "-R needs one argument. Usage: -R <720p=hd|1080p=fullhd")
@@ -332,56 +367,93 @@ int main(int argc, char* argv[]) {
                         outHeight = 1080;
                     } else {
                         std::cerr << res << " is no supported resolution. Use -r w h for a custom resolution" << std::endl;
+                        break;
                     }
+                    resetCouter = true;
                     break;
-                }
+                    }
+                case 'C': {
+                    ASSERT(argc > i + 1, "-C needs one argument. Usage: -C <black|white|transparent>")
+                    std::string res(argv[++i]);
+                    if (res == "black"){
+                        backgroundColor = sf::Color::Black;
+                    } else if (res == "white") {
+                        backgroundColor = sf::Color::White;
+                    } else if (res == "transparent"){
+                        backgroundColor = sf::Color::Transparent;
+                    } else {
+                        std::cerr << res << " is no supported color. Use -c r g b a for a custom color" << std::endl;
+                        break;
+                    }
+                    resetCouter = true;
+                    break;
+                    }
+                case 'c': {
+                    ASSERT(argc > i + 4, "-c needs four arguments. Usage: -c r g b a")
+                    int r = std::stoi(argv[++i]);
+                    int g = std::stoi(argv[++i]);
+                    int b = std::stoi(argv[++i]);
+                    int a = std::stoi(argv[++i]);
+                    backgroundColor = sf::Color(r, g, b, a);
+                    resetCouter = true;
+                    break;
+                    }
                 default:
                     std::cerr << "unknown option -" << argv[i][1] << std::endl;
                 case '?': // help
-                    std::cout << "Usage: " << argv[0] << " [-d <datafile>] [-r <outputwidth> <outputheigt> | -R <720p=hd|1080p=fullhd] -o <outputfolder> frame0 frame1 ... frameN" << std::endl;
-                    std::cout << "   or: " << argv[0] << " -c -d <datafile> [-o <outputfolder>] [newFrame1 newFrame2 ... newFrameN]" << std::endl;
+                    std::cout << "Usage: " << argv[0] << " [-d <file>] [-r <w> <h> | -R <720p=hd|1080p=fullhd>] [-c <r> <g> <b> <a> | -C <black|white|transparent>] [-e] [-a] [-o <folder> | -O] frame0 frame1 ... frameN" << std::endl;
+                    std::cout << "Go to https://github.com/Indeximal/FaceLapse for further information" << std::endl;
                     return 0;
             }
         } else {
             frames.push_back(std::string(argv[i]));
         }
     }
-    
-    if (shouldContinue && jsonData.is_object()) {
 
-        if (outputFolder == "") { // use old folder -> continue
-            outputFolder = jsonData["output"]["folder"];
-            outputCounter = jsonData["output"]["counter"];
-            std::cout << "Only the new frames, beginning from " << outputCounter << "will be rendered." << std::endl;
-        } else { // use new folder -> render all
-            std::cout << "All frames will be rerendered into the new folder, might not be in the correct order." << std::endl;
-            std::vector<std::string> oldFrames;
-            for (auto it = frameData.begin(); it != frameData.end(); ++it){
-                oldFrames.push_back(it.key());
-            }
-            frames.insert(frames.begin(), oldFrames.begin(), oldFrames.end());
-
-        }
-        eyeHeight = jsonData["positioning"]["height"];
-        eyeDistance = jsonData["positioning"]["gap"];
-
-        outWidth = jsonData["display"]["width"];
-        outHeight = jsonData["display"]["height"];
+    if (!customColor) {
         auto col = jsonData["display"]["color"];
         backgroundColor = sf::Color(col[0], col[1], col[2], col[3]);
-    } else {
-        if (outputFolder == "" || frames.size() == 0){
-            return argError(argv[0]);
+    }
+    if (outHeight == 0) {
+        outWidth = jsonData["display"]["width"];
+        outHeight = jsonData["display"]["height"];
+    }
+
+    if (hasData) {
+        std::cout << "Frames are sorted alphabetically, so they might not be in the original order!" << std::endl;
+
+        std::vector<std::string> oldFrames;
+        int badFrames = 0;
+        std::string firstBad = ""; 
+        for (auto it = frameData.begin(); it != frameData.end(); ++it){
+            std::string name = it.key();
+            std::fstream frameFile(name);
+            if (!frameFile.good()) {
+                if (firstBad == "") {
+                    firstBad = name;
+                } else {
+                    badFrames++;
+                }
+            } else {
+                oldFrames.push_back(it.key());
+            }
         }
+        if (firstBad != "") {
+            std::cerr << firstBad << " and " << badFrames << (badFrames == 1 ? " other frame " : " other frames ") << "weren't found!" << std::endl;
+        }
+        frames.insert(frames.begin(), oldFrames.begin(), oldFrames.end());
     }
 
-    if (jsonData.is_object()) {
-        jsonData["output"] = {{"folder", outputFolder}, {"counter", outputCounter}};
-        jsonData["display"] = {{"width", outWidth}, {"height", outHeight}, {"color", {backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a}}};
+    if (continueOutput) {
+        outputFolder = jsonData["output"]["folder"];
+        outputCounter = resetCouter ? 0 : jsonData["output"]["counter"].get<int>();
     }
+ 
+    jsonData["output"]["folder"] = outputFolder;
+    jsonData["display"] = {{"width", outWidth}, {"height", outHeight}, {"color", {backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a}}}; 
 
-    std::vector<std::string> framesToDo = getUncompleteFrames(frames);
 
+    std::vector<std::string> framesToDo = forceAllFrames ? frames : getUncompleteFrames(frames);
     if (framesToDo.size() > 0) {
         if (fillData(framesToDo)){
             writeData(); // early write
@@ -390,39 +462,43 @@ int main(int argc, char* argv[]) {
                 return 0;
             }
         } else {
-            std::cout << "Canceled eye indentification." << std::endl;
+            std::cout << "Canceled eye indentification phase." << std::endl;
             return 0;
         }
     }
 
-    if (!shouldContinue){
+    if (forceEyeWindow || jsonData["positioning"]["gap"].is_null()) {
         if (demandEyePositioning()) {
-            jsonData["positioning"] = {{"gap", eyeDistance},{"height", eyeHeight}};
+            jsonData["positioning"] = {{"gap", eyeDistance}, {"height", eyeHeight}};
         } else {
-            std::cout << "Canceled positioning." << std::endl;
+            std::cout << "Canceled positioning phase." << std::endl;
             return 0;
         }
+    } else {
+        eyeHeight = jsonData["positioning"]["height"];
+        eyeDistance = jsonData["positioning"]["gap"];
     }
 
-    sf::Clock clock;
-    for (int i = 0; i < frames.size(); i++) {
-        std::cout << "\r[" << i+1 << "/" << frames.size() << "]" << std::flush;
-        std::string nr = std::to_string(outputCounter++);
-        std::string name = outputFolder + "frame" + std::string(5 - nr.length(), '0') + nr + ".png";
+    if (outputFolder != "") {
+        sf::Clock clock;
+        int secPerFrame = 0;
+        for (int i = outputCounter; i < frames.size(); i++) {
+            std::cout << "\r[" << i+1 << "/" << frames.size() << "]" << std::flush;
+            std::string nr = std::to_string(outputCounter++);
+            std::string name = outputFolder + "frame" + std::string(5 - nr.length(), '0') + nr + ".png";
 
-        sf::Clock c2;
-        sf::Image frame = transformFrame(frames[i]);
-        std::cout << " transform:" << c2.restart().asMilliseconds() << "ms, write:";
-        frame.saveToFile(name);
-        std::cout << c2.restart().asMilliseconds() << "ms" << std::flush;
+            sf::Clock c2;
 
+            sf::Image frame = transformFrame(frames[i]);
+            if (!frame.saveToFile(name)) {
+                std::cerr << frames[i] << " couldn't be saved as " << name << std::endl; 
+            }
+
+            secPerFrame = c2.restart().asSeconds();
+            std::cout << "~" << (frames.size() - outputCounter)*secPerFrame << " sec remaining" << std::flush;
+        }
+        std::cout << std::endl << "Done, " << frames.size() << " frames processed in " << clock.getElapsedTime().asMilliseconds() << "ms" << std::endl;
     }
-    std::cout << std::endl;
-
-    if (jsonData.is_object()) {
-        jsonData["output"]["counter"] = outputCounter;
-        writeData();
-    }
-
-    std::cout << "Done, " << frames.size() << " frames processed in " << clock.getElapsedTime().asMilliseconds() << "ms" << std::endl;
+    jsonData["output"]["counter"] = outputCounter;
+    writeData();
 }
