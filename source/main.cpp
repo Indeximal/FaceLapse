@@ -448,8 +448,7 @@ int main(int argc, char* argv[]) {
         outputFolder = jsonData["output"]["folder"];
         outputCounter = resetCouter ? 0 : jsonData["output"]["counter"].get<int>();
     }
- 
-    jsonData["output"]["folder"] = outputFolder;
+
     jsonData["display"] = {{"width", outWidth}, {"height", outHeight}, {"color", {backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a}}}; 
 
 
@@ -480,6 +479,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (outputFolder != "") {
+        jsonData["output"]["folder"] = outputFolder;
+        
         sf::Clock clock;
         int secPerFrame = 0;
         for (int i = outputCounter; i < frames.size(); i++) {

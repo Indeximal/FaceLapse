@@ -7,13 +7,8 @@ Compile main.cpp in c++11. Include json.hpp from https://github.com/nlohmann/jso
 Link to sfml-graphics, sfml-window and sfml-system.
 
 ## Usage
-`facelapse [-d <datafile>] [-r <outputwidth> <outputheigt> | -R <720p=hd|1080p=fullhd] -o <outputfolder> frame0 frame1 ... frameN`
-
-or: 
-
-`facelapse -c -d <datafile> [-o <outputfolder>] [newFrame1 newFrame2 ... newFrameN]`
-
-### Arguments
+### Command Line Arguments
+`facelapse [-d <datafile>] [-r <outputwidth> <outputheigt> | -R <720p=hd|1080p=fullhd] [-c <r> <g> <b> <a> | -C <black|white|transparent>] [-a] [-e] [-o <outputfolder> | -O] frames...`
 
 `-d <datafile`: some json file to store eye-coordinates, as well as other information, for later use.
 
@@ -21,12 +16,16 @@ or:
 
 `-R <Resolution>`: Use 720p = hd or 1080p = fullhd as the output resolution.
 
+`-c <r> <g> <b> <a>`: Backgroundcolor in the output frames.
+
+`-C <Color>`: Use black, white or transparent as a backgroundcolor.
+
 `-o <outputfolder>`: Folder where to put frames in the format: frame00000.png
 
-`-c`: Continue like last time, need a json-datafila to work. 
-Will include all previous frames saved in the datafile as well as any other given frames.
-The resolution, the output folder and the final eye position will be the same as last time.
-If a outputfolder is given it will instead output to this folder and start with frame00000.png,
-otherwise it will continue with the counting.
+`-O`: Output to the same folder as last time, starting from the previous last frame.
+
+`-a`: Force all frames to be displayed for eye coordinate editing.
+
+`-e`: Force the window to move the eye target to pop up.
 
 `frame` A picture in a sfml supported format. (png and jpeg work for sure)
