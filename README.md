@@ -12,13 +12,11 @@ Link to sfml-graphics, sfml-window and sfml-system.
 
 `-d <datafile`: some json file to store eye-coordinates, as well as other information, for later use.
 
-`-r <width> <height>`: Output resolution in pixels.
+`-r <width> <height>` or `-R <Resolution>`: Set the output resolution in pixels. Availiable presets: 
+720p = hd, 1080p = fullhd
 
-`-R <Resolution>`: Use 720p = hd or 1080p = fullhd as the output resolution.
-
-`-c <r> <g> <b> <a>`: Backgroundcolor in the output frames.
-
-`-C <Color>`: Use black, white or transparent as a backgroundcolor.
+`-c <r> <g> <b> <a>` or `-C <Color>`: Set the backgroundcolor for the output frames. Availiable presets: 
+black, white, transparent
 
 `-o <outputfolder>`: Folder where to put frames in the format: frame00000.png
 
@@ -28,4 +26,18 @@ Link to sfml-graphics, sfml-window and sfml-system.
 
 `-e`: Force the window to move the eye target to pop up.
 
-`frame` A picture in a sfml supported format. (png and jpeg work for sure)
+`frames...` A picture in a sfml supported format. (png and jpeg work for sure)
+
+### Eye coordinate editing
+A window will show up in which you can determine your selfies eye positions. Use left click to mark your right eye (normally on the left side of the picture) and right click to mark your left eye. 2 markers will indicate your clicks, they should point towards each other.
+
+Press Enter to confirm. Or press Escape or close the window to discard all changes.
+
+### Layout editing
+In the next window you can choose the final position of your eye in the output. To do so click or drag your left eye (on the right hand side). Once you're done press Enter to confirm. Or press Escape or close the window to discard the changes.
+
+### Rendering
+If a output file is given or -O is used all frames will be rendered into the given folder using the format: frame00000.png. If only -O is used only the new frames will be rendered starting from where it last stopped. Use this to save time. If you wish to rather same space delete the old output frames and use -o folder.
+
+## Combining images.
+This tool only transforms the frames so your eyes are allway in the same position. To combine the frames to a video use tools like ffmpeg.
