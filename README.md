@@ -37,7 +37,10 @@ Press Enter to confirm. Or press Escape or close the window to discard all chang
 In the next window you can choose the final position of your eye in the output. To do so click or drag your left eye (on the right hand side). Once you're done press Enter to confirm. Or press Escape or close the window to discard the changes.
 
 ### Rendering
-If a output file is given or -O is used all frames will be rendered into the given folder using the format: frame00000.png. If only -O is used only the new frames will be rendered starting from where it last stopped. Use this to save time. If you wish to rather same space delete the old output frames and use -o folder.
+If a output file is given or -O is set all frames will be rendered into the given folder using the format: frame00000.png. The frames stored in the datafile will be included befor any newframes and sorted alphabetically. If only -O is used only the new frames will be rendered starting from where it last stopped. Use this to save time. If you wish to rather same space delete the old output frames and use -o folder.
+
+## Example
+`facelapse -d datafile.json -o frames data/new/*`: All previously in the datafile saved frames as well as all new frames will be rendered into frames/ in alphabetical order.
 
 ## Combining images.
-This tool only transforms the frames so your eyes are allway in the same position. To combine the frames to a video use tools like ffmpeg.
+This tool only transforms the frames so your eyes are always in the same position. To combine the frames to a video use tools like ffmpeg.
