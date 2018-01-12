@@ -70,7 +70,7 @@ sf::Image transformFrame(std::string name) {
     b2d::Vector2 rEye = frameData[name]["RightEyePos"];
     b2d::Vector2 lEye = frameData[name]["LeftEyePos"];
     float dist = (rEye - lEye).getLength();
-    float angle = std::atan((rEye.y - lEye.y) / (rEye.x - lEye.x));
+    float angle = std::atan2(lEye.y - rEye.y, lEye.x - rEye.x);
 
     b2d::Matrix3 t1 = b2d::Matrix3::translate2d(-(outWidth-eyeDistance*outWidth)/2, -outHeight*(1-eyeHeight));
     b2d::Matrix3 s0 = b2d::Matrix3::scale2d(dist / (eyeDistance*outWidth));
