@@ -1,20 +1,17 @@
 #include <iostream>
 #include <fstream>
+#include <thread>
 
 #include <SFML/Graphics.hpp>
 #include "json.hpp"
+using json = nlohmann::json;
 
 #include "bMath.hpp"
 
-#define ASSERT(exp, msg) if (!(exp)) {\
-    std::cerr << msg << std::endl;\
-    return -1;}
-
-#define DEBUG(var) std::cout << #var":" << var << std::endl;
+#define ASSERT(exp, msg) if (!(exp)) { std::cerr << msg << std::endl; return -1;}
 
 #define WINDOWHEIGHT 720
 
-using json = nlohmann::json;
 
 namespace b2d {
     void to_json(json& j, const b2d::Vector2& v) {
@@ -58,7 +55,34 @@ int outputCounter = 0;
 
 std::vector<std::string> frames;
 
-sf::Image transformFrame(std::string name) {
+sf::RenderWindow window(sf::VideoMode(1280, 720), "Face Lapse Utility");
+
+sf::Image transformFrameGL(std::string frameName) {
+    sf::RenderTexture renderTex;
+    renderTex.create(outWidth, outHeight);
+    renderTex.clear(backgroundColor);
+
+    sf::Texture tex;
+    tex.loadFromFile(frameName);
+
+    sf::Sprite sprite(tex);
+
+    b2d::Vector2 rEye = frameData[frameName]["RightEyePos"];
+    b2d::Vector2 lEye = frameData[frameName]["LeftEyePos"];
+    float dist = (rEye - lEye).getLength();
+    float angle = std::atan2(lEye.y - rEye.y, lEye.x - rEye.x);
+
+    sprite.setOrigin(rEye.x, rEye.y);
+    sprite.scale((eyeDistance*outWidth) / dist, -(eyeDistance*outWidth) / dist);
+    sprite.rotate(angle * 360 / 6.2831f);
+    sprite.move((outWidth-eyeDistance*outWidth)/2, outHeight * eyeHeight);
+
+    renderTex.draw(sprite);
+
+    return renderTex.getTexture().copyToImage();
+}
+
+/*sf::Image transformFrame(std::string name) {
     // sf::Clock clock;
     sf::Image ret;
     ret.create(outWidth, outHeight);
@@ -91,41 +115,50 @@ sf::Image transformFrame(std::string name) {
     }
     // std::cout << clock.getElapsedTime().asMilliseconds() << std::endl;
     return ret;
+}*/
+enum ReturnStatus {
+    Saved,
+    Canceled
+};
+
+void hideWindow() {
+    window.setVisible(false);
+    sf::Event event;
+    while (window.pollEvent(event));
 }
 
-bool demandEyePositioning() {
+ReturnStatus demandEyePositioning() {
     float windowScale = (float) WINDOWHEIGHT / outHeight;
-    sf::RenderWindow window(sf::VideoMode(outWidth * windowScale, WINDOWHEIGHT), "Face Lapse Utility");
-    window.setFramerateLimit(60);
+    window.setSize(sf::Vector2u(outWidth * windowScale, WINDOWHEIGHT));
+    //sf::RenderWindow window(sf::VideoMode(outWidth * windowScale, WINDOWHEIGHT), "Face Lapse Utility");
+
+    window.setVisible(true);
 
     sf::Texture tex;
-    tex.loadFromImage(transformFrame(frames[0])); // hardcode 1st frame 
+    tex.loadFromImage(transformFrameGL(frames[0])); // hardcode 1st frame 
 
     sf::Sprite photo;
     photo.setTexture(tex);
     photo.setOrigin(window.getSize().x / 2 / windowScale, (1 - eyeHeight) * window.getSize().y / windowScale);
-    // std::cout << (window.getSize().x / 2) << "|" << ((1 - eyeHeight) * window.getSize().y) << std::endl;
     photo.setPosition(window.getSize().x / 2, (1 - eyeHeight) * window.getSize().y);
     photo.setScale(windowScale, windowScale);
-
-    bool save = false;
 
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
             switch (event.type) {
-            case sf::Event::Closed :
-                window.close();
-                break;
-            case sf::Event::KeyPressed :
-                if (event.key.code == sf::Keyboard::Escape) window.close();
+            case sf::Event::Closed : // Close
+                return Canceled;
+            case sf::Event::KeyPressed : // Escape and Return
+                if (event.key.code == sf::Keyboard::Escape) 
+                    return Canceled;
                 if (event.key.code == sf::Keyboard::Return) {
-                    save = true;
-                    window.close();
+                    eyeHeight = 1 - photo.getPosition().y / window.getSize().y;
+                    eyeDistance *= photo.getScale().x / windowScale;
+                    return Saved;
                 }
                 break;
-            
-            case sf::Event::MouseMoved :
+            case sf::Event::MouseMoved : // Drag
                 if (sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)){
                     float s = std::abs((float)event.mouseMove.x / window.getSize().x - 0.5) / eyeDistance * 2;
                     photo.setScale(windowScale*s, windowScale*s);
@@ -133,7 +166,7 @@ bool demandEyePositioning() {
                     photo.setPosition(photo.getPosition().x, d);
                 }
                 break;
-            case sf::Event::MouseButtonReleased : {
+            case sf::Event::MouseButtonReleased : { // Click
                 if (event.mouseButton.button != sf::Mouse::Button::Left){
                     break;
                 }
@@ -141,8 +174,8 @@ bool demandEyePositioning() {
                 photo.setScale(windowScale*s, windowScale*s);
                 float d = event.mouseButton.y;
                 photo.setPosition(photo.getPosition().x, d);
-                break;
-            }
+                break; 
+                }
             default:
                 break;
             }
@@ -153,11 +186,7 @@ bool demandEyePositioning() {
 
         window.display();
     }
-    if (save) {
-        eyeHeight = 1 - photo.getPosition().y / window.getSize().y;
-        eyeDistance *= photo.getScale().x / windowScale;
-    }
-    return save;
+    return Canceled;
 }
 
 std::vector<std::string> getUncompleteFrames(std::vector<std::string> frameSet){
@@ -185,37 +214,32 @@ std::vector<std::string> getUncompleteFrames(std::vector<std::string> frameSet){
     return ret;
 }
 
-bool fillData(std::vector<std::string> frameSet) {
+ReturnStatus fillData(std::vector<std::string> frameSet) {
     int loadNumber = 0;
     int currentNumber = -1;
     float currentScale = 1;
 
-    sf::RenderWindow window(sf::VideoMode(1280, 720), "Face Lapse Utility");
-    window.setFramerateLimit(60);
+    window.setVisible(true);
 
     sf::Texture tex;
     sf::Sprite photo;
-
-    bool save = false;
 
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
             switch (event.type) {
             case sf::Event::Closed :
-                window.close();
-                break;
+                return Canceled;
             case sf::Event::KeyPressed :
-                if (event.key.code == sf::Keyboard::Escape) window.close();
+                if (event.key.code == sf::Keyboard::Escape) {
+                    return Canceled;
+                }
                 if (event.key.code == sf::Keyboard::Return) {
-                    save = true;
-                    window.close();
+                    return Saved;
                 }
                 if (event.key.code == sf::Keyboard::Right) {
-
                     loadNumber = std::min(currentNumber + 1, (int)frameSet.size() - 1);
                 }
-
                 if (event.key.code == sf::Keyboard::Left) {
                     loadNumber = std::max(currentNumber - 1, 0);
                 }
@@ -291,7 +315,7 @@ bool fillData(std::vector<std::string> frameSet) {
 
         window.display();
     }
-    return save;
+    return Canceled;
 }
 
 bool fileExists(std::string name) {
@@ -315,6 +339,9 @@ int main(int argc, char* argv[]) {
         std::cout << "No arguments provided. Use " << argv[0] << " -? for help" << std::endl;
         return 0;
     }
+
+    window.setVisible(false);
+    window.setFramerateLimit(60);
 
     bool forceEyeWindow = false;
     bool forceAllFrames = false;
@@ -469,7 +496,9 @@ int main(int argc, char* argv[]) {
     // Eye indentification Phase
     std::vector<std::string> framesToDo = forceAllFrames ? frames : getUncompleteFrames(frames);
     if (framesToDo.size() > 0) {
-        if (fillData(framesToDo)){ // if successful (Enter)
+        ReturnStatus result = fillData(framesToDo);
+        hideWindow();
+        if (result == Saved){ // if successful (Enter)
             writeData(); // save eye coordinates
         } else { // Cancel Phase 1
             std::cout << "Canceled eye indentification phase." << std::endl;
@@ -483,18 +512,23 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    // Load eyepositioning if availiable
+    if (!jsonData["positioning"]["gap"].is_null()) {
+        eyeHeight = jsonData["positioning"]["height"];
+        eyeDistance = jsonData["positioning"]["gap"];
+    }
+
     // Positioning Phase
-    if (forceEyeWindow || jsonData["positioning"]["gap"].is_null()) { // if needs phase 2
-        if (demandEyePositioning()) { // if successful (Enter)
+    if (forceEyeWindow || jsonData["positioning"]["gap"].is_null()) { // if phase 2 needed
+        ReturnStatus result = demandEyePositioning();
+        hideWindow();
+        if (result == Saved) { // if successful (Enter)
             jsonData["positioning"] = {{"gap", eyeDistance}, {"height", eyeHeight}};
             writeData(); // save eye positioning
         } else { // cancel phase 2
             std::cout << "Canceled positioning phase." << std::endl;
             return 0;
         }
-    } else { // phase 2 not needed
-        eyeHeight = jsonData["positioning"]["height"];
-        eyeDistance = jsonData["positioning"]["gap"];
     }
 
     // Rendering Phase
@@ -502,22 +536,32 @@ int main(int argc, char* argv[]) {
         
         sf::Clock clock;
         float secPerFrame = 0;
-        for (int i = outputCounter; i < frames.size(); i++) {
-            std::cout << "\r[" << i+1 << "/" << frames.size() << "]" << std::flush;
-            std::string nr = std::to_string(outputCounter++);
-            std::string name = outputFolder + "frame" + std::string(5 - nr.length(), '0') + nr + ".png";
 
-            sf::Clock c2;
+        bool saveSuccess = true;
+        std::thread saverThread([](){});
+        //sf::Image frameImage;
+        
+        int framesProcessed = 0;
+        for (; outputCounter < frames.size(); outputCounter++) {
+            std::cout << "\r[" << outputCounter+1 << "/" << frames.size() << "]" << std::flush;
+            std::string nr = std::to_string(outputCounter);
+            std::string fileName = outputFolder + "frame" + std::string(5 - nr.length(), '0') + nr + ".png";
 
-            sf::Image frame = transformFrame(frames[i]);
-            if (!frame.saveToFile(name)) {
-                std::cerr << frames[i] << " couldn't be saved as " << name << std::endl; 
-            }
+            sf::Image frameImage = transformFrameGL(frames[outputCounter]); // Transform
 
-            secPerFrame = c2.restart().asSeconds();
-            float timeLeft = (frames.size() - outputCounter)*secPerFrame;
-            std::cout << " eta: " << (float)((int)(timeLeft*100) / 100.0) << "s   " << std::flush;
+            saverThread.join(); // wait for last frame to finish saving
+            saverThread = std::thread([=](){
+                bool success = frameImage.saveToFile(fileName); // save in saverThread
+                if (!success)
+                    std::cerr << frames[outputCounter] << " couldn't be saved as " << fileName << std::endl; 
+            });
+
+            framesProcessed++;
+            float timeLeft = clock.getElapsedTime().asSeconds() / framesProcessed * (frames.size() - outputCounter);
+            std::cout << " eta: " << std::round(timeLeft) << "s   " << std::flush;
         }
+        saverThread.join();
+
         std::cout << std::endl << "Done, " << frames.size() << " frames processed in " << clock.getElapsedTime().asMilliseconds() << "ms" << std::endl;
         
         jsonData["output"]["folder"] = outputFolder;
