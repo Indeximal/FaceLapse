@@ -3,12 +3,12 @@
 Create a timelapse of your daily selfies. Facelapse transforms each frame so your eyes are in the same position.
 
 ## Build
-Compile main.cpp in c++11. Include json.hpp from https://github.com/nlohmann/json and bMath.hpp from https://github.com/Indeximal/sfmlTest.
+Compile main.cpp in c++11. Include json.hpp from https://github.com/nlohmann/json.
 Link to sfml-graphics, sfml-window and sfml-system.
 
 ## Usage
 ### Command Line Arguments
-`facelapse [-d <datafile>] [-r <outputwidth> <outputheigt> | -R <720p=hd|1080p=fullhd] [-c <r> <g> <b> <a> | -C <black|white|transparent>] [-a] [-e] [-o <outputfolder> | -O] frames...`
+`facelapse [-d <datafile>] [-r <outputwidth> <outputheigt> | -R <720p=hd|1080p=fullhd] [-c <r> <g> <b> <a> | -C <black|white|transparent>] [-a] [-e] [-o <outputfolder>] frames...`
 
 `-d <datafile`: some json file to store eye-coordinates, as well as other information, for later use.
 
@@ -19,8 +19,6 @@ Link to sfml-graphics, sfml-window and sfml-system.
 black, white, transparent
 
 `-o <outputfolder>`: Folder where to put frames in the format: frame00000.png
-
-`-O`: Output to the same folder as last time, starting from the previous last frame.
 
 `-a`: Force all frames to be displayed for eye coordinate editing.
 
@@ -34,13 +32,13 @@ A window will show up in which you can determine your selfies eye positions. Use
 Press Enter to confirm. Or press Escape or close the window to discard all changes.
 
 ### Layout editing
-In the next window you can choose the final position of your eye in the output. To do so click or drag your left eye (on the right hand side). Once you're done press Enter to confirm. Or press Escape or close the window to discard the changes.
+In the next window you can choose the final position of your eye in the output. To do so click or drag your eye. Once you're done press Enter to confirm. Or press Escape or close the window to discard the changes.
 
 ### Rendering
-If a output file is given or -O is set all frames will be rendered into the given folder using the format: frame00000.png. The frames stored in the datafile will be included befor any newframes and sorted alphabetically. If only -O is used only the new frames will be rendered starting from where it last stopped. Use this to save time. If you wish to rather same space delete the old output frames and use -o folder.
+If a output file is given the frames will be rendered into the given folder using the format: frame00000.png.
 
 ## Example
-`facelapse -d datafile.json -o frames data/new/*`: All previously in the datafile saved frames as well as all new frames will be rendered into frames/ in alphabetical order.
+`facelapse -d datafile.json -o frames images/*`: All images in the folder 'images' will be rendered into the folder 'frames'. 
 
 ## Combining images.
 This tool only transforms the frames so your eyes are always in the same position. To combine the frames to a video use tools like ffmpeg.
