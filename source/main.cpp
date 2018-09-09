@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include <SFML/Graphics.hpp>
+#include <opencv/cv.hpp>
 #include "json.hpp"
 using json = nlohmann::json;
 
@@ -135,6 +136,7 @@ namespace facelapse {
         int wHeight = WINDOWHEIGHT;
         int wWidth = outSettings.width * windowScale;
         window.setSize(sf::Vector2u(wWidth, wHeight));
+        window.setView(sf::View(sf::FloatRect(0, 0, wWidth, wHeight)));
 
         window.setVisible(true);
 
@@ -150,7 +152,7 @@ namespace facelapse {
 
         while (window.isOpen()) {
             sf::Event event;
-            while (window.pollEvent(event)) {
+            while (!needsRepaint && window.waitEvent(event)) {
                 switch (event.type) {
                 case sf::Event::Closed : // Close
                     return Canceled;
@@ -177,6 +179,15 @@ namespace facelapse {
                         needsRepaint = true;
                     }
                     break;
+                case sf::Event::Resized : { // Resize
+                    // update the view to the new size of the window
+                    float h = event.size.height;
+                    float w = (float)outSettings.width / outSettings.height * event.size.height;
+                    window.setSize(sf::Vector2u(w, h));
+                    //window.setView(sf::View(sf::FloatRect(0, 0, w, h)));
+                    needsRepaint = true;
+                    break;
+                }
                 default:
                     break;
                 }
@@ -210,7 +221,7 @@ namespace facelapse {
 
     ReturnStatus fillData(std::vector<std::string> frameSet) {
         int loadNumber = 0;
-        int currentNumber = 0;
+        int currentNumber = -1;
         float currentScale = 1;
 
         window.setVisible(true);
@@ -224,7 +235,7 @@ namespace facelapse {
 
         while (window.isOpen()) {
             sf::Event event;
-            while (window.pollEvent(event)) {
+            while (!needsRepaint && window.waitEvent(event)) {
                 switch (event.type) {
                 case sf::Event::Closed :
                     return Canceled;
@@ -239,10 +250,12 @@ namespace facelapse {
                     if (event.key.code == sf::Keyboard::Right) {
                         coordinatePairs[frameSet[currentNumber]] = currPair;
                         loadNumber = std::min(currentNumber + 1, (int)frameSet.size() - 1);
+                        needsRepaint = true;
                     }
                     if (event.key.code == sf::Keyboard::Left) {
                         coordinatePairs[frameSet[currentNumber]] = currPair;
                         loadNumber = std::max(currentNumber - 1, 0);
+                        needsRepaint = true;
                     }
                     break;
                 case sf::Event::MouseButtonPressed : {
@@ -256,6 +269,14 @@ namespace facelapse {
                         currPair.rX = x;
                         currPair.rY = y;
                     }
+                    needsRepaint = true;
+                    break;
+                }
+                case sf::Event::Resized : {
+                    coordinatePairs[frameSet[currentNumber]] = currPair;
+                    sf::FloatRect visibleArea(0, 0, event.size.width, event.size.height);
+                    window.setView(sf::View(visibleArea));
+                    loadNumber = currentNumber;
                     needsRepaint = true;
                     break;
                 }
@@ -472,7 +493,6 @@ namespace facelapse {
         }
 
         window.create(sf::VideoMode(1280, 720), "Face Lapse Utility");
-        window.setVisible(false);
         window.setFramerateLimit(60);
 
         // Eye indentification Phase
@@ -512,7 +532,6 @@ namespace facelapse {
             float secPerFrame = 0;
 
             std::thread saverThread([](){});
-            //sf::Image frameImage;
             
             int framesProcessed = 0;
             for (int i = 0; i < frames.size(); i++) {
@@ -540,8 +559,8 @@ namespace facelapse {
             std::cout << "\r" << frames.size() << " frames processed in " << clock.getElapsedTime().asMilliseconds() << "ms" << std::endl;
         }
         return 0;
-    } // </int main()>
-} // </namespace facelapse>
+    } // main()
+} // namespace facelapse
 
 int main(int argc, char* argv[]) {
     return facelapse::fmain(argc, argv);
