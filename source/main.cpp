@@ -4,9 +4,11 @@
 #include <cmath>
 
 #include <SFML/Graphics.hpp>
-#include <opencv/cv.hpp>
 #include "json.hpp"
 using json = nlohmann::json;
+
+#include "Header.h"
+#include "EyeDetection.h"
 
 #define ASSERT(exp, msg) if (!(exp)) { std::cerr << msg << std::endl; return -1;}
 #define WINDOWHEIGHT 720
@@ -24,22 +26,19 @@ namespace facelapse {
         const std::string coordinates = "coordinate_pairs";
         const std::string version = "version";
     }
+   
 
-    struct CoordinatePair {
-        float rX, rY;
-        float lX, lY;
+    CoordinatePair::CoordinatePair(float rx, float ry, float lx, float ly) 
+        : rX(rx), rY(ry), lX(lx), lY(ly) {}
 
-        CoordinatePair(float rx = -1, float ry = -1, float lx = -1, float ly = -1) 
-            : rX(rx), rY(ry), lX(lx), lY(ly)
-        { }
+    float CoordinatePair::dist() {
+        return std::sqrt((rX - lX) * (rX - lX) + (rY - lY) * (rY - lY));
+    }
 
-        float dist() {
-            return std::sqrt((rX - lX) * (rX - lX) + (rY - lY) * (rY - lY));
-        }
-        bool isComplete() {
-            return rX > 0 && rY > 0 && lX > 0 && lY > 0;
-        }
-    };
+    bool CoordinatePair::isComplete() {
+        return rX > 0 && rY > 0 && lX > 0 && lY > 0;
+    }
+
     void to_json(json& j, const CoordinatePair& coords) {
         j = json { coords.rX, coords.rY, coords.lX, coords.lY };
     }
@@ -61,7 +60,12 @@ namespace facelapse {
         OutputSettings(int w = 1920, int h = 1080, sf::Color col = sf::Color::Black, float eH = 0.5, float eS = 0.1)
             : width(w), height(h), bgColor(col), eyeHeight(eH), eyeSpacing(eS)
         { }
+
     };
+    std::ostream &operator<<(std::ostream &os, OutputSettings const &set) { 
+        return os << "Output settings: " << set.width << "x" << set.height << " background: rgba(" 
+            << std::to_string(set.bgColor.r) << ", " << std::to_string(set.bgColor.g) << ", " << std::to_string(set.bgColor.b) << ", " << std::to_string(set.bgColor.a) << ")";
+    }
     void to_json(json& j, const OutputSettings& obj) {
         j = json { {jsonKeys::settings::width, obj.width}, {jsonKeys::settings::height, obj.height}, 
         {jsonKeys::settings::bgColor, {obj.bgColor.r, obj.bgColor.g, obj.bgColor.b, obj.bgColor.a }},
@@ -82,7 +86,6 @@ namespace facelapse {
     };
 
 
-    json jsonData;
     json coordinatePairs;
     std::string dataFileName;
 
@@ -137,6 +140,7 @@ namespace facelapse {
         int wWidth = outSettings.width * windowScale;
         window.setSize(sf::Vector2u(wWidth, wHeight));
         window.setView(sf::View(sf::FloatRect(0, 0, wWidth, wHeight)));
+        window.setTitle("Face Lapse Utility");
 
         window.setVisible(true);
 
@@ -219,7 +223,11 @@ namespace facelapse {
         return ret;
     }
 
-    ReturnStatus fillData(std::vector<std::string> frameSet) {
+    
+
+    ReturnStatus fillData(std::vector<std::string> frameSet, bool autoDetect) {
+        initCascades();
+
         int loadNumber = 0;
         int currentNumber = -1;
         float currentScale = 1;
@@ -257,6 +265,10 @@ namespace facelapse {
                         loadNumber = std::max(currentNumber - 1, 0);
                         needsRepaint = true;
                     }
+                    if (event.key.code == sf::Keyboard::Space) {
+                        currPair = findEyeCoords(frameSet[currentNumber]);
+                        needsRepaint = true;
+                    }
                     break;
                 case sf::Event::MouseButtonPressed : {
                     float x = event.mouseButton.x / currentScale;
@@ -289,11 +301,16 @@ namespace facelapse {
             if (loadNumber != -1) {
                 if (tex.loadFromFile(frameSet[loadNumber])) {
                     photo.setTexture(tex);
-                    float scaleX = (float)window.getSize().x / tex.getSize().x; // goal: > 1
+                    float scaleX = (float)window.getSize().x / tex.getSize().x;
                     float scaleY = (float)window.getSize().y / tex.getSize().y;
-                    currentScale = std::min(scaleX, scaleY);
+                    currentScale = std::min(scaleX, scaleY); // Scale to fit screen
                     photo.setScale(currentScale, currentScale);
+
                     currPair = coordinatePairs[frameSet[loadNumber]];
+                    if (autoDetect && !currPair.isComplete()) {
+                        currPair = findEyeCoords(frameSet[loadNumber]);
+                    }
+                    window.setTitle("Face Lapse Utility (" + std::to_string(loadNumber+1) + "/" + std::to_string(frameSet.size()) + ")");
                     currentNumber = loadNumber;
                     needsRepaint = true;
                 } else {
@@ -306,6 +323,7 @@ namespace facelapse {
                 window.clear(sf::Color::White);
                 window.draw(photo);
 
+                // Draw Eye indicators
                 if (currPair.rX != -1) {
                     sf::Vector2f pos = sf::Vector2f(currPair.rX, currPair.rY) * currentScale;
                     sf::Vertex lines[] =
@@ -339,12 +357,14 @@ namespace facelapse {
 
     void writeData(){
         if (dataFileName != "") {
-            jsonData[jsonKeys::coordinates] = coordinatePairs;
-            jsonData[jsonKeys::outputsettings] = outSettings; 
-            jsonData[jsonKeys::version] = 2;
+            json jData;
+            jData[jsonKeys::coordinates] = coordinatePairs;
+            jData[jsonKeys::outputsettings] = outSettings; 
+            jData[jsonKeys::version] = 2;
+            
             std::ofstream file(dataFileName);
             if (file.good()){
-                file << jsonData;
+                file << jData;
             }
             file.close();
         }
@@ -356,9 +376,10 @@ namespace facelapse {
             return 0;
         }
 
-        bool hasData = false;
+        bool hasDataFile = false;
         bool forceEyeWindow = false;
         bool forceAllFrames = false;
+        bool autoDetect = false;
         std::string outputFolder;
 
         bool customColor = false;
@@ -375,19 +396,14 @@ namespace facelapse {
                     case 'a':
                         forceAllFrames = true;
                         break;
+                    case 'x':
+                        autoDetect = true;
+                        break;
                     case 'd': // datafile
-                        {
                         ASSERT(argc > i + 1, "-d needs one argument. Usage: -d <datafile>")
                         dataFileName = argv[++i];
-                        std::ifstream file(dataFileName);
-                        if (file.good()){
-                            file >> jsonData;
-                            coordinatePairs = jsonData[jsonKeys::coordinates];
-                            hasData = true;
-                        }
-                        file.close();
+                        hasDataFile = true;
                         break;
-                        }
                     case 'o': // outputfolder
                         ASSERT(argc > i + 1, "-o needs one argument. Usage: -o <outputfolder>")
                         outputFolder = argv[++i];
@@ -446,7 +462,7 @@ namespace facelapse {
                     default:
                         std::cerr << "unknown option -" << argv[i][1] << std::endl;
                     case '?': // help
-                        std::cout << "Usage: " << argv[0] << " [-d <file>] [-r <w> <h> | -R <720p=hd|1080p=fullhd>] [-c <r> <g> <b> <a> | -C <black|white|transparent>] [-e] [-a] [-o <folder>] frame0 frame1 ... frameN" << std::endl;
+                        std::cout << "Usage: " << argv[0] << " [-d <file>] [-r <w> <h> | -R <720p=hd|1080p=fullhd>] [-c <r> <g> <b> <a> | -C <black|white|transparent>] [-e] [-a] [-x] [-o <folder>] frame0 frame1 ... frameN" << std::endl;
                         std::cout << "Go to https://github.com/Indeximal/FaceLapse for further information" << std::endl;
                         return 0;
                 }
@@ -455,25 +471,37 @@ namespace facelapse {
             }
         }
 
-        // Load display & positioning data
-        if (hasData) {
-            if (jsonData.count(jsonKeys::version) == 0) {
-                outSettings.height = jsonData["display"]["height"];
-                outSettings.width = jsonData["display"]["width"];
-                auto col = jsonData["display"]["color"];
-                outSettings.bgColor = sf::Color(col[0], col[1], col[2], col[3]);
-                outSettings.eyeHeight = jsonData["positioning"]["height"];
-                outSettings.eyeSpacing = jsonData["positioning"]["gap"];
+        bool hadData = false;
+        if (hasDataFile) {
+            json jsonData;
 
-                for (json::iterator it = jsonData["frames"].begin(); it != jsonData["frames"].end(); ++it) {
-                    json f = it.value();
-                    CoordinatePair cp(f["RightEyePos"][0], f["RightEyePos"][1], f["LeftEyePos"][0], f["LeftEyePos"][1]);
-                    coordinatePairs[it.key()] = cp;
+            std::ifstream file(dataFileName);
+            if (file.good()){
+                file >> jsonData;
+                hadData = true;
+
+                // Load display & positioning data
+                if (jsonData[jsonKeys::version] == 2) {
+                    outSettings = jsonData[jsonKeys::outputsettings];
+                    coordinatePairs = jsonData[jsonKeys::coordinates];
+                } else {
+                    // Update older Settings to new format
+                    outSettings.height = jsonData["display"]["height"];
+                    outSettings.width = jsonData["display"]["width"];
+                    auto col = jsonData["display"]["color"];
+                    outSettings.bgColor = sf::Color(col[0], col[1], col[2], col[3]);
+                    outSettings.eyeHeight = jsonData["positioning"]["height"];
+                    outSettings.eyeSpacing = jsonData["positioning"]["gap"];
+
+                    for (json::iterator it = jsonData["frames"].begin(); it != jsonData["frames"].end(); ++it) {
+                        json f = it.value();
+                        CoordinatePair cp(f["RightEyePos"][0], f["RightEyePos"][1], f["LeftEyePos"][0], f["LeftEyePos"][1]);
+                        coordinatePairs[it.key()] = cp;
+                    }
+                    jsonData = json();
                 }
-                jsonData = json();
-            } else {
-                outSettings = jsonData[jsonKeys::outputsettings];
             }
+            file.close();
         }
 
         if (customColor) {
@@ -492,13 +520,13 @@ namespace facelapse {
             return 0;
         }
 
-        window.create(sf::VideoMode(1280, 720), "Face Lapse Utility");
+        window.create(sf::VideoMode(600, 800), "Face Lapse Utility");
         window.setFramerateLimit(60);
 
         // Eye indentification Phase
         std::vector<std::string> framesToDo = forceAllFrames ? frames : getUncompleteFrames(frames);
         if (framesToDo.size() > 0) {
-            ReturnStatus result = fillData(framesToDo);
+            ReturnStatus result = fillData(framesToDo, autoDetect);
             hideWindow();
             if (result == Saved){ // if successful (Enter)
                 writeData();
@@ -515,7 +543,7 @@ namespace facelapse {
         }
 
         // Positioning Phase
-        if (forceEyeWindow || !hasData) { // if phase 2 needed
+        if (forceEyeWindow || !hadData) { // if phase 2 needed
             ReturnStatus result = demandEyePositioning();
             hideWindow();
             if (result == Saved) { // if successful (Enter)
@@ -527,6 +555,8 @@ namespace facelapse {
         }
 
         // Rendering Phase
+        std::cout << outSettings << std::endl;
+
         if (outputFolder != "") {  
             sf::Clock clock;
             float secPerFrame = 0;
